@@ -1,6 +1,5 @@
 import streamlit as st
 from openai import OpenAI
-import urllib.parse
 
 # -----------------------------
 # 기본 설정
@@ -20,24 +19,24 @@ GENRES = ["KPOP", "발라드", "재즈", "클래식", "R&B", "힙합", "EDM"]
 with st.sidebar:
     st.header("⚙️ 음악 설정")
 
-    api_key = st.text_input(
-        "🔑 OpenAI API Key",
-        type="password",
-        placeholder="sk-..."
-    )
-
     genre = st.selectbox("🎵 음악 장르 선택", GENRES)
 
     reset = st.button("🗑️ 대화 초기화")
 
-    st.caption("DJ는 오늘도 믹싱 중 🎚️")
+    st.caption("🎧 Powered by Streamlit Cloud")
 
-# API 키 없으면 중단
-if not api_key:
-    st.info("👈 사이드바에 OpenAI API 키를 입력하면 DJ가 등장합니다.")
+# -----------------------------
+# OpenAI API Key (Streamlit Secrets)
+# -----------------------------
+if "OPENAI_API_KEY" not in st.secrets:
+    st.error(
+        "🚨 OpenAI API Key가 설정되어 있지 않습니다.\n\n"
+        "Streamlit Cloud의 **Settings → Secrets**에\n"
+        "`OPENAI_API_KEY`를 추가해주세요."
+    )
     st.stop()
 
-client = OpenAI(api_key=api_key)
+client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 
 # -----------------------------
 # session_state 초기화
@@ -61,7 +60,7 @@ system_message = {
         "- 최소 3곡 이상 추천\n"
         "- 각 곡마다 간단한 추천 이유 포함\n"
         "- ❗유튜브 '검색 링크'만 제공하세요 (직접 영상 링크 금지)\n"
-        "- 링크 형식은 반드시 아래와 같아야 합니다:\n"
+        "- 링크 형식:\n"
         "  https://www.youtube.com/results?search_query=곡명+아티스트\n"
         "- 말투는 힙하고 친근한 DJ 멘트처럼\n\n"
         "출력 형식:\n"
