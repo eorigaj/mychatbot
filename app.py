@@ -78,7 +78,7 @@ if "taste_bad" not in st.session_state:
     st.session_state.taste_bad = []
 
 if "daily_playlists" not in st.session_state:
-    st.session_state.daily_playlists = {}  # {date: [songs]}
+    st.session_state.daily_playlists = {}
 
 if reset:
     st.session_state.clear()
@@ -94,7 +94,7 @@ def summarize(lst):
     return ", ".join([f"{k}({v})" for k, v in c.most_common(5)])
 
 # -----------------------------
-# 시스템 프롬프트
+# 시스템 프롬프트 (곡 설명 포함)
 # -----------------------------
 system_message = {
     "role": "system",
@@ -107,10 +107,11 @@ system_message = {
         f"- 좋아요 취향: {summarize(st.session_state.taste_good)}\n"
         f"- 싫어요 취향: {summarize(st.session_state.taste_bad)}\n\n"
         "조건:\n"
-        "- 좋아요 취향은 더 반영하고 싫어요 취향은 피하세요\n"
-        "- 유튜브 검색 링크만 제공하세요\n"
-        "- 아래 형식으로만 출력하세요:\n\n"
+        "- 각 곡마다 짧은 한 줄 설명을 포함하세요\n"
+        "- 유튜브 검색 링크만 사용하세요\n"
+        "- 아래 형식을 반드시 지키세요:\n\n"
         "1️⃣ 곡 제목 - 아티스트\n"
+        "💬 한 줄 설명\n"
     )
 }
 
@@ -129,14 +130,20 @@ if user_input:
     raw = response.choices[0].message.content
 
     # -----------------------------
-    # 곡 파싱
+    # 곡 파싱 (제목 / 아티스트 / 설명)
     # -----------------------------
     songs = []
-    for line in raw.split("\n"):
-        match = re.match(r"\d️⃣\s(.+?)\s-\s(.+)", line)
-        if match:
-            title, artist = match.groups()
-            songs.append((title.strip(), artist.strip()))
+    lines = raw.split("\n")
+    i = 0
+    while i < len(lines):
+        title_match = re.match(r"\d️⃣\s(.+?)\s-\s(.+)", lines[i])
+        if title_match and i + 1 < len(lines) and lines[i + 1].startswith("💬"):
+            title, artist = title_match.groups()
+            desc = lines[i + 1].replace("💬", "").strip()
+            songs.append((title.strip(), artist.strip(), desc))
+            i += 2
+        else:
+            i += 1
 
     # -----------------------------
     # 하루 플레이리스트 저장
@@ -147,35 +154,34 @@ if user_input:
     st.subheader(f"🎧 오늘의 플레이리스트 ({today})")
 
     # -----------------------------
-    # 곡별 출력 + 👍👎 + 링크 버튼
+    # 곡별 출력 + 👍👎 + 작은 버튼
     # -----------------------------
-    for i, (title, artist) in enumerate(songs, 1):
+    for idx, (title, artist, desc) in enumerate(songs, 1):
         query = urllib.parse.quote_plus(f"{title} {artist}")
         youtube_url = f"https://www.youtube.com/results?search_query={query}"
 
-        st.markdown(f"### {i}. {title} - {artist}")
+        st.markdown(f"### {idx}. {title} - {artist}")
+        st.caption(f"💬 {desc}")
 
-        col1, col2, col3 = st.columns([1, 1, 4])
+        c1, c2, c3 = st.columns([0.8, 0.8, 4])
 
-        with col1:
-            if st.button("👍", key=f"like_{today}_{i}"):
+        with c1:
+            if st.button("👍", key=f"like_{today}_{idx}"):
                 st.session_state.taste_good.append(artist)
-                st.success("좋아요 반영!")
 
-        with col2:
-            if st.button("👎", key=f"dislike_{today}_{i}"):
+        with c2:
+            if st.button("👎", key=f"dislike_{today}_{idx}"):
                 st.session_state.taste_bad.append(artist)
-                st.warning("싫어요 반영!")
 
-        with col3:
-            st.link_button("🎬 YouTube에서 듣기", youtube_url)
+        with c3:
+            st.link_button("▶ YouTube", youtube_url)
 
 # -----------------------------
-# 저장된 하루 플레이리스트 보기
+# 저장된 플레이리스트
 # -----------------------------
 if st.session_state.daily_playlists:
     st.divider()
     st.subheader("📅 저장된 플레이리스트")
 
     for d, plist in st.session_state.daily_playlists.items():
-        st.markdown(f"**{d}** — {len(plist)}곡")
+        st.markdown(f"**{d}** · {len(plist)}곡")
