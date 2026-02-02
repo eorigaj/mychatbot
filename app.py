@@ -1,142 +1,148 @@
 import streamlit as st
 from openai import OpenAI
 import requests
-import urllib.parse
+from collections import Counter
 
 # -----------------------------
 # 기본 설정
 # -----------------------------
 st.set_page_config(page_title="🎧 음악 추천 DJ", page_icon="🎧")
 st.title("🎧 음악 추천 DJ")
-st.write("기분, 상황, 날씨까지 고려해서 DJ가 플레이리스트를 만들어줄게 🔥")
+st.write("DJ 캐릭터와 함께, 취향을 학습하는 음악 추천 🎶")
 
 # -----------------------------
-# 장르 (확장)
+# DJ 캐릭터 설정
 # -----------------------------
+DJ_CHARACTERS = {
+    "힙합 DJ": "당신은 힙합과 스트릿 감성에 강한 DJ입니다. 말투는 힙하고 자신감 넘칩니다.",
+    "감성 DJ": "당신은 새벽 감성과 감정선을 중시하는 DJ입니다. 말투는 부드럽고 공감적입니다.",
+    "클럽 DJ": "당신은 클럽에서 분위기를 터뜨리는 DJ입니다. 말투는 에너지 넘치고 과감합니다.",
+    "카페 DJ": "당신은 카페 플레이리스트 전문가 DJ입니다. 말투는 차분하고 따뜻합니다."
+}
+
 GENRES = ["KPOP", "POP", "발라드", "재즈", "클래식", "R&B", "힙합", "EDM", "무관"]
 
 # -----------------------------
-# 사이드바 설정
+# 사이드바
 # -----------------------------
 with st.sidebar:
-    st.header("⚙️ 음악 설정")
+    st.header("⚙️ 설정")
 
-    genre = st.selectbox("🎵 음악 장르 선택", GENRES)
+    dj = st.selectbox("🎧 DJ 캐릭터", list(DJ_CHARACTERS.keys()))
+    genre = st.selectbox("🎵 장르", GENRES)
 
-    song_count = st.slider(
-        "🎶 추천 곡 개수",
-        min_value=3,
-        max_value=10,
-        value=5
-    )
+    song_count = st.slider("🎶 곡 수", 3, 30, 10)
+    city = st.text_input("🌦️ 도시 (날씨)", "Seoul")
 
-    city = st.text_input(
-        "🌦️ 현재 위치 (날씨 반영)",
-        placeholder="예: Seoul"
-    )
-
-    reset = st.button("🗑️ 대화 초기화")
-
-    st.caption("🎧 DJ MIX AUTO MODE")
+    reset = st.button("🗑️ 초기화")
 
 # -----------------------------
-# Secrets 체크
+# Secrets
 # -----------------------------
-if "OPENAI_API_KEY" not in st.secrets:
-    st.error("🚨 OPENAI_API_KEY가 설정되지 않았습니다.")
-    st.stop()
-
-if "OPENWEATHER_API_KEY" not in st.secrets:
-    st.error("🚨 OPENWEATHER_API_KEY가 설정되지 않았습니다.")
+if "OPENAI_API_KEY" not in st.secrets or "OPENWEATHER_API_KEY" not in st.secrets:
+    st.error("Secrets에 API 키를 설정해주세요.")
     st.stop()
 
 client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 
 # -----------------------------
-# 날씨 API 함수
+# 날씨
 # -----------------------------
-def get_weather(city_name):
-    if not city_name:
-        return "알 수 없음"
-
-    url = "https://api.openweathermap.org/data/2.5/weather"
-    params = {
-        "q": city_name,
-        "appid": st.secrets["OPENWEATHER_API_KEY"],
-        "units": "metric",
-        "lang": "kr"
-    }
-
+def get_weather(city):
     try:
-        res = requests.get(url, params=params, timeout=5).json()
+        res = requests.get(
+            "https://api.openweathermap.org/data/2.5/weather",
+            params={
+                "q": city,
+                "appid": st.secrets["OPENWEATHER_API_KEY"],
+                "units": "metric",
+                "lang": "kr"
+            },
+            timeout=5
+        ).json()
         return res["weather"][0]["description"]
     except:
         return "알 수 없음"
 
-weather_info = get_weather(city)
+weather = get_weather(city)
 
 # -----------------------------
-# session_state 초기화
+# session_state
 # -----------------------------
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
+if "taste_good" not in st.session_state:
+    st.session_state.taste_good = []
+
+if "taste_bad" not in st.session_state:
+    st.session_state.taste_bad = []
+
 if reset:
     st.session_state.messages = []
+    st.session_state.taste_good = []
+    st.session_state.taste_bad = []
 
 # -----------------------------
-# 시스템 프롬프트 (DJ + 플레이리스트)
+# 취향 요약
+# -----------------------------
+def summarize(lst):
+    if not lst:
+        return "아직 데이터 없음"
+    c = Counter(lst)
+    return ", ".join([f"{k}({v})" for k, v in c.most_common(5)])
+
+taste_good = summarize(st.session_state.taste_good)
+taste_bad = summarize(st.session_state.taste_bad)
+
+# -----------------------------
+# 시스템 프롬프트
 # -----------------------------
 system_message = {
     "role": "system",
     "content": (
-        "당신은 트렌디하고 힙한 DJ입니다 🎧🔥\n"
-        "사용자의 기분, 상황, 날씨를 종합해 플레이리스트를 만들어주세요.\n\n"
+        f"{DJ_CHARACTERS[dj]}\n\n"
+        "당신은 사용자의 음악 취향을 학습하는 DJ입니다.\n\n"
+        f"- 장르: {genre} (무관이면 자유)\n"
+        f"- 추천 곡 수: {song_count}곡\n"
+        f"- 날씨: {weather}\n"
+        f"- 좋아요 받은 취향: {taste_good}\n"
+        f"- 싫어요 받은 취향: {taste_bad}\n\n"
         "조건:\n"
-        f"- 음악 장르는 '{genre}' 기준 (무관이면 장르 자유)\n"
-        f"- 추천 곡 개수는 정확히 {song_count}곡\n"
-        f"- 현재 날씨: '{weather_info}'\n"
-        "- ❗유튜브 '검색 링크'만 제공하세요 (직접 영상 링크 금지)\n"
-        "- 링크 형식:\n"
-        "  https://www.youtube.com/results?search_query=곡명+아티스트\n"
-        "- 말투는 힙한 DJ 멘트처럼\n\n"
+        "- 최소한 싫어요 취향은 피하고, 좋아요 취향을 더 반영\n"
+        "- YouTube / Spotify / Apple Music는 검색 링크만 제공\n"
+        "- DJ 멘트 스타일 유지\n\n"
         "출력 형식:\n"
         "🎧 오늘의 플레이리스트\n"
         "1️⃣ 곡 제목 - 아티스트\n"
         "👉 추천 이유\n"
-        "🔗 유튜브 검색 링크\n"
+        "▶ YouTube: https://www.youtube.com/results?search_query=곡명+아티스트\n"
+        "▶ Spotify: https://open.spotify.com/search/곡명%20아티스트\n"
+        "▶ Apple Music: https://music.apple.com/kr/search?term=곡명+아티스트\n"
     )
 }
 
 # -----------------------------
-# 기존 대화 표시
+# 대화 표시
 # -----------------------------
-for msg in st.session_state.messages:
-    with st.chat_message(msg["role"]):
-        st.markdown(msg["content"])
+for m in st.session_state.messages:
+    with st.chat_message(m["role"]):
+        st.markdown(m["content"])
 
 # -----------------------------
-# 사용자 입력
+# 입력
 # -----------------------------
-user_input = st.chat_input(
-    "지금 기분/상황을 말해줘 🎶 (예: 비 오는 밤, 혼자 작업 중)"
-)
+user_input = st.chat_input("지금 기분이나 상황을 말해줘 🎶")
 
 if user_input:
-    st.session_state.messages.append({
-        "role": "user",
-        "content": user_input
-    })
+    st.session_state.messages.append({"role": "user", "content": user_input})
 
     with st.chat_message("user"):
         st.markdown(user_input)
 
-    # -----------------------------
-    # AI 응답 (스트리밍)
-    # -----------------------------
     with st.chat_message("assistant"):
         placeholder = st.empty()
-        full_response = ""
+        full = ""
 
         stream = client.chat.completions.create(
             model="gpt-4o-mini",
@@ -147,12 +153,26 @@ if user_input:
         for chunk in stream:
             delta = chunk.choices[0].delta.content
             if delta:
-                full_response += delta
-                placeholder.markdown(full_response + "▌")
+                full += delta
+                placeholder.markdown(full + "▌")
 
-        placeholder.markdown(full_response)
+        placeholder.markdown(full)
 
-    st.session_state.messages.append({
-        "role": "assistant",
-        "content": full_response
-    })
+    st.session_state.messages.append({"role": "assistant", "content": full})
+    st.session_state.last_playlist = full
+
+# -----------------------------
+# 👍👎 피드백 버튼
+# -----------------------------
+if "last_playlist" in st.session_state:
+    col1, col2 = st.columns(2)
+
+    with col1:
+        if st.button("👍 좋아요"):
+            st.session_state.taste_good.append(st.session_state.last_playlist)
+            st.success("취향에 반영했어요!")
+
+    with col2:
+        if st.button("👎 싫어요"):
+            st.session_state.taste_bad.append(st.session_state.last_playlist)
+            st.warning("다음엔 다른 스타일로 추천할게요!")
