@@ -6,16 +6,16 @@ from datetime import date
 import re
 import urllib.parse
 
-# -----------------------------
+# ==================================================
 # 기본 설정
-# -----------------------------
+# ==================================================
 st.set_page_config(page_title="🎧 음악 추천 DJ", page_icon="🎧")
 st.title("🎧 음악 추천 DJ")
 st.write("DJ 캐릭터와 함께, 취향을 학습하는 음악 추천 🎶")
 
-# -----------------------------
+# ==================================================
 # DJ 캐릭터
-# -----------------------------
+# ==================================================
 DJ_CHARACTERS = {
     "힙합 DJ": "당신은 힙합과 스트릿 감성에 강한 DJ입니다. 말투는 힙하고 자신감 넘칩니다.",
     "감성 DJ": "당신은 새벽 감성과 감정선을 중시하는 DJ입니다. 말투는 부드럽고 공감적입니다.",
@@ -25,9 +25,9 @@ DJ_CHARACTERS = {
 
 GENRES = ["KPOP", "POP", "발라드", "재즈", "클래식", "R&B", "힙합", "EDM", "무관"]
 
-# -----------------------------
+# ==================================================
 # 사이드바
-# -----------------------------
+# ==================================================
 with st.sidebar:
     st.header("⚙️ 설정")
 
@@ -38,18 +38,18 @@ with st.sidebar:
 
     reset = st.button("🗑️ 전체 초기화")
 
-# -----------------------------
-# Secrets
-# -----------------------------
+# ==================================================
+# Secrets 체크
+# ==================================================
 if "OPENAI_API_KEY" not in st.secrets or "OPENWEATHER_API_KEY" not in st.secrets:
     st.error("🚨 Streamlit Secrets에 API 키를 설정해주세요.")
     st.stop()
 
 client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 
-# -----------------------------
-# 날씨
-# -----------------------------
+# ==================================================
+# 날씨 API
+# ==================================================
 def get_weather(city):
     try:
         res = requests.get(
@@ -68,9 +68,9 @@ def get_weather(city):
 
 weather = get_weather(city)
 
-# -----------------------------
-# session_state
-# -----------------------------
+# ==================================================
+# session_state 초기화
+# ==================================================
 if "taste_good" not in st.session_state:
     st.session_state.taste_good = []
 
@@ -80,22 +80,25 @@ if "taste_bad" not in st.session_state:
 if "daily_playlists" not in st.session_state:
     st.session_state.daily_playlists = {}
 
+if "song_ratings" not in st.session_state:
+    st.session_state.song_ratings = {}
+
 if reset:
     st.session_state.clear()
     st.experimental_rerun()
 
-# -----------------------------
-# 취향 요약
-# -----------------------------
+# ==================================================
+# 취향 요약 함수
+# ==================================================
 def summarize(lst):
     if not lst:
         return "없음"
     c = Counter(lst)
     return ", ".join([f"{k}({v})" for k, v in c.most_common(5)])
 
-# -----------------------------
-# 시스템 프롬프트 (곡 설명 포함)
-# -----------------------------
+# ==================================================
+# 시스템 프롬프트
+# ==================================================
 system_message = {
     "role": "system",
     "content": (
@@ -103,21 +106,21 @@ system_message = {
         "당신은 사용자의 음악 취향을 학습하는 DJ입니다.\n\n"
         f"- 장르: {genre} (무관이면 자유)\n"
         f"- 추천 곡 수: {song_count}곡\n"
-        f"- 날씨: {weather}\n"
+        f"- 현재 날씨: {weather}\n"
         f"- 좋아요 취향: {summarize(st.session_state.taste_good)}\n"
         f"- 싫어요 취향: {summarize(st.session_state.taste_bad)}\n\n"
         "조건:\n"
-        "- 각 곡마다 짧은 한 줄 설명을 포함하세요\n"
-        "- 유튜브 검색 링크만 사용하세요\n"
-        "- 아래 형식을 반드시 지키세요:\n\n"
+        "- 각 곡마다 짧은 한 줄 설명 포함\n"
+        "- 유튜브 검색 링크만 사용\n"
+        "- 아래 형식만 사용:\n\n"
         "1️⃣ 곡 제목 - 아티스트\n"
         "💬 한 줄 설명\n"
     )
 }
 
-# -----------------------------
+# ==================================================
 # 사용자 입력
-# -----------------------------
+# ==================================================
 user_input = st.chat_input("지금 기분이나 상황을 말해줘 🎶")
 
 if user_input:
@@ -129,56 +132,74 @@ if user_input:
 
     raw = response.choices[0].message.content
 
-    # -----------------------------
-    # 곡 파싱 (제목 / 아티스트 / 설명)
-    # -----------------------------
+    # ------------------------------
+    # 곡 파싱
+    # ------------------------------
     songs = []
     lines = raw.split("\n")
     i = 0
     while i < len(lines):
-        title_match = re.match(r"\d️⃣\s(.+?)\s-\s(.+)", lines[i])
-        if title_match and i + 1 < len(lines) and lines[i + 1].startswith("💬"):
-            title, artist = title_match.groups()
+        m = re.match(r"\d️⃣\s(.+?)\s-\s(.+)", lines[i])
+        if m and i + 1 < len(lines) and lines[i + 1].startswith("💬"):
+            title, artist = m.groups()
             desc = lines[i + 1].replace("💬", "").strip()
             songs.append((title.strip(), artist.strip(), desc))
             i += 2
         else:
             i += 1
 
-    # -----------------------------
+    # ------------------------------
     # 하루 플레이리스트 저장
-    # -----------------------------
+    # ------------------------------
     today = str(date.today())
     st.session_state.daily_playlists[today] = songs
+    st.session_state.current_date = today
+
+# ==================================================
+# 플레이리스트 출력 (항상 session_state 기준)
+# ==================================================
+if "current_date" in st.session_state:
+    today = st.session_state.current_date
+    songs = st.session_state.daily_playlists.get(today, [])
 
     st.subheader(f"🎧 오늘의 플레이리스트 ({today})")
 
-    # -----------------------------
-    # 곡별 출력 + 👍👎 + 작은 버튼
-    # -----------------------------
     for idx, (title, artist, desc) in enumerate(songs, 1):
+        song_id = f"{today}_{idx}"
         query = urllib.parse.quote_plus(f"{title} {artist}")
         youtube_url = f"https://www.youtube.com/results?search_query={query}"
 
         st.markdown(f"### {idx}. {title} - {artist}")
         st.caption(f"💬 {desc}")
 
-        c1, c2, c3 = st.columns([0.8, 0.8, 4])
+        rating = st.session_state.song_ratings.get(song_id)
+
+        c1, c2, c3, c4 = st.columns([0.8, 0.8, 1.2, 4])
 
         with c1:
-            if st.button("👍", key=f"like_{today}_{idx}"):
+            if st.button("👍", key=f"like_{song_id}", disabled=rating is not None):
                 st.session_state.taste_good.append(artist)
+                st.session_state.song_ratings[song_id] = "like"
 
         with c2:
-            if st.button("👎", key=f"dislike_{today}_{idx}"):
+            if st.button("👎", key=f"dislike_{song_id}", disabled=rating is not None):
                 st.session_state.taste_bad.append(artist)
+                st.session_state.song_ratings[song_id] = "dislike"
 
         with c3:
+            if rating == "like":
+                st.markdown("🟢 **좋아요**")
+            elif rating == "dislike":
+                st.markdown("🔴 **싫어요**")
+            else:
+                st.markdown("⚪ 미평가")
+
+        with c4:
             st.link_button("▶ YouTube", youtube_url)
 
-# -----------------------------
-# 저장된 플레이리스트
-# -----------------------------
+# ==================================================
+# 저장된 플레이리스트 목록
+# ==================================================
 if st.session_state.daily_playlists:
     st.divider()
     st.subheader("📅 저장된 플레이리스트")
