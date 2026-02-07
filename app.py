@@ -17,10 +17,10 @@ st.write("DJ 캐릭터와 함께, 취향을 학습하는 음악 추천 🎶")
 # DJ 캐릭터
 # ==================================================
 DJ_CHARACTERS = {
-    "힙합 DJ": "당신은 힙합과 스트릿 감성에 강한 DJ입니다.",
-    "감성 DJ": "당신은 새벽 감성과 감정선을 중시하는 DJ입니다.",
-    "클럽 DJ": "당신은 클럽에서 분위기를 터뜨리는 DJ입니다.",
-    "카페 DJ": "당신은 카페 플레이리스트 전문가 DJ입니다."
+    "힙합 DJ": "당신은 힙합과 스트릿 감성에 강한 DJ입니다. 말투는 힙하고 자신감 넘칩니다.",
+    "감성 DJ": "당신은 새벽 감성과 감정선을 중시하는 DJ입니다. 말투는 부드럽고 공감적입니다.",
+    "클럽 DJ": "당신은 클럽에서 분위기를 터뜨리는 DJ입니다. 말투는 에너지 넘치고 과감합니다.",
+    "카페 DJ": "당신은 카페 플레이리스트 전문가 DJ입니다. 말투는 차분하고 따뜻합니다."
 }
 
 GENRES = ["KPOP", "POP", "발라드", "재즈", "클래식", "R&B", "힙합", "EDM", "무관"]
@@ -36,10 +36,7 @@ with st.sidebar:
     song_count = st.slider("🎶 추천 곡 수", 3, 30, 10)
 
     use_weather = st.checkbox("🌦️ 날씨 반영", value=True)
-
-    city = None
-    if use_weather:
-        city = st.text_input("도시 입력", "Seoul")
+    city = st.text_input("도시", "Seoul") if use_weather else None
 
     if st.button("🗑️ 전체 초기화"):
         st.session_state.clear()
@@ -49,7 +46,7 @@ with st.sidebar:
 # Secrets
 # ==================================================
 if "OPENAI_API_KEY" not in st.secrets:
-    st.error("OPENAI_API_KEY가 설정되지 않았습니다.")
+    st.error("🚨 OPENAI_API_KEY가 설정되지 않았습니다.")
     st.stop()
 
 client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
@@ -73,22 +70,22 @@ def get_weather(city):
     except:
         return None
 
-weather = None
-if use_weather and city:
-    weather = get_weather(city)
+weather = get_weather(city) if use_weather and city else None
 
 # ==================================================
 # session_state 초기화
 # ==================================================
-for key, default in {
+defaults = {
     "taste_good": [],
     "taste_bad": [],
     "daily_playlists": {},
     "song_ratings": {},
     "playlist_counter": 0
-}.items():
-    if key not in st.session_state:
-        st.session_state[key] = default
+}
+
+for k, v in defaults.items():
+    if k not in st.session_state:
+        st.session_state[k] = v
 
 # ==================================================
 # 취향 요약
@@ -108,7 +105,7 @@ def build_system_prompt():
         f"- 싫어요 취향: {summarize(st.session_state.taste_bad)}\n"
     )
 
-    if use_weather and weather:
+    if weather:
         prompt += f"- 현재 날씨: {weather}\n"
 
     prompt += (
@@ -118,7 +115,6 @@ def build_system_prompt():
         "1️⃣ 곡 제목 - 아티스트\n"
         "💬 한 줄 설명\n"
     )
-
     return prompt
 
 # ==================================================
@@ -166,7 +162,7 @@ if user_input:
 # ==================================================
 if "current_playlist" in st.session_state:
     pid = st.session_state.current_playlist
-    songs = st.session_state.daily_playlists[pid]
+    songs = st.session_state.daily_playlists.get(pid, [])
 
     st.subheader(f"🎧 플레이리스트 ({pid})")
 
@@ -178,17 +174,25 @@ if "current_playlist" in st.session_state:
         youtube_url = f"https://www.youtube.com/results?search_query={query}"
 
         st.markdown(f"### {idx}. {title} - {artist}")
-        st.caption(desc)
+        st.caption(f"💬 {desc}")
 
         c1, c2, c3, c4 = st.columns([0.8, 0.8, 1.4, 4])
 
         with c1:
-            if st.button("👍", key=f"like_{song_id}", disabled=rating):
+            if st.button(
+                "👍",
+                key=f"like_{song_id}",
+                disabled=rating is not None
+            ):
                 st.session_state.taste_good.append(artist)
                 st.session_state.song_ratings[song_id] = "like"
 
         with c2:
-            if st.button("👎", key=f"dislike_{song_id}", disabled=rating):
+            if st.button(
+                "👎",
+                key=f"dislike_{song_id}",
+                disabled=rating is not None
+            ):
                 st.session_state.taste_bad.append(artist)
                 st.session_state.song_ratings[song_id] = "dislike"
 
