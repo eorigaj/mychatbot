@@ -1,7 +1,6 @@
 import streamlit as st
 from openai import OpenAI
 import requests
-from collections import Counter
 from datetime import date
 import re
 import urllib.parse
@@ -11,7 +10,7 @@ import urllib.parse
 # ==================================================
 st.set_page_config(page_title="🎧 음악 추천 DJ", page_icon="🎧")
 st.title("🎧 음악 추천 DJ")
-st.write("DJ 캐릭터와 함께, 취향을 학습하는 음악 추천 🎶")
+st.write("DJ 캐릭터와 함께 음악 플레이리스트를 추천해드려요 🎶")
 
 # ==================================================
 # DJ 캐릭터
@@ -37,6 +36,17 @@ with st.sidebar:
 
     use_weather = st.checkbox("🌦️ 날씨 반영", value=True)
     city = st.text_input("도시", "Seoul") if use_weather else None
+
+    st.divider()
+    st.subheader("📚 이전 플레이리스트")
+
+    if "playlists" in st.session_state and st.session_state.playlists:
+        selected_pid = st.selectbox(
+            "다시 보기",
+            list(st.session_state.playlists.keys())
+        )
+    else:
+        selected_pid = None
 
     if st.button("🗑️ 전체 초기화"):
         st.session_state.clear()
@@ -75,34 +85,22 @@ weather = get_weather(city) if use_weather and city else None
 # ==================================================
 # session_state 초기화
 # ==================================================
-defaults = {
-    "taste_good": [],
-    "taste_bad": [],
-    "daily_playlists": {},
-    "song_ratings": {},
-    "playlist_counter": 0
-}
+if "playlists" not in st.session_state:
+    st.session_state.playlists = {}  # {playlist_id: [(title, artist, desc), ...]}
 
-for k, v in defaults.items():
-    if k not in st.session_state:
-        st.session_state[k] = v
+if "playlist_counter" not in st.session_state:
+    st.session_state.playlist_counter = 0
+
+if "current_playlist" not in st.session_state:
+    st.session_state.current_playlist = None
 
 # ==================================================
-# 취향 요약
-# ==================================================
-def summarize(lst):
-    c = Counter(lst)
-    return ", ".join([k for k, _ in c.most_common(5)]) or "없음"
-
-# ==================================================
-# 시스템 프롬프트 생성 (숫자 이모지 ❌)
+# 시스템 프롬프트 생성
 # ==================================================
 def build_system_prompt():
     prompt = (
         f"{DJ_CHARACTERS[dj]}\n\n"
         f"- 장르: {genre} (무관이면 자유)\n"
-        f"- 좋아요 취향: {summarize(st.session_state.taste_good)}\n"
-        f"- 싫어요 취향: {summarize(st.session_state.taste_bad)}\n"
     )
 
     if weather:
@@ -154,47 +152,26 @@ if user_input:
         if len(songs) == song_count:
             break
 
-    st.session_state.daily_playlists[playlist_id] = songs
+    st.session_state.playlists[playlist_id] = songs
     st.session_state.current_playlist = playlist_id
+
+# ==================================================
+# 표시할 플레이리스트 결정
+# ==================================================
+playlist_to_show = st.session_state.current_playlist or selected_pid
 
 # ==================================================
 # 플레이리스트 출력
 # ==================================================
-if "current_playlist" in st.session_state:
-    pid = st.session_state.current_playlist
-    songs = st.session_state.daily_playlists.get(pid, [])
+if playlist_to_show:
+    songs = st.session_state.playlists.get(playlist_to_show, [])
 
-    st.subheader(f"🎧 플레이리스트 ({pid})")
+    st.subheader(f"🎧 플레이리스트 ({playlist_to_show})")
 
     for idx, (title, artist, desc) in enumerate(songs, 1):
-        song_id = f"{pid}_{idx}"
-        rating = st.session_state.song_ratings.get(song_id)
-
         query = urllib.parse.quote_plus(f"{title} {artist}")
         youtube_url = f"https://www.youtube.com/results?search_query={query}"
 
         st.markdown(f"### {idx}. {title} - {artist}")
         st.caption(f"💬 {desc}")
-
-        c1, c2, c3, c4 = st.columns([0.8, 0.8, 1.4, 4])
-
-        with c1:
-            if st.button("👍", key=f"like_{song_id}", disabled=rating is not None):
-                st.session_state.taste_good.append(artist)
-                st.session_state.song_ratings[song_id] = "like"
-
-        with c2:
-            if st.button("👎", key=f"dislike_{song_id}", disabled=rating is not None):
-                st.session_state.taste_bad.append(artist)
-                st.session_state.song_ratings[song_id] = "dislike"
-
-        with c3:
-            if rating == "like":
-                st.markdown("🟢 좋아요")
-            elif rating == "dislike":
-                st.markdown("🔴 싫어요")
-            else:
-                st.markdown("⚪ 미평가")
-
-        with c4:
-            st.link_button("▶ YouTube", youtube_url)
+        st.link_button("▶ YouTube에서 듣기", youtube_url)
