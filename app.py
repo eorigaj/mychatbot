@@ -95,7 +95,7 @@ def summarize(lst):
     return ", ".join([k for k, _ in c.most_common(5)]) or "없음"
 
 # ==================================================
-# 시스템 프롬프트 생성
+# 시스템 프롬프트 생성 (숫자 이모지 ❌)
 # ==================================================
 def build_system_prompt():
     prompt = (
@@ -110,9 +110,9 @@ def build_system_prompt():
 
     prompt += (
         f"\n❗ 반드시 정확히 {song_count}곡을 출력하세요.\n"
-        f"❗ {song_count}곡이 아니면 잘못된 답변입니다.\n\n"
+        f"❗ 아래 형식을 정확히 지키세요.\n\n"
         "형식:\n"
-        "1️⃣ 곡 제목 - 아티스트\n"
+        "1. 곡 제목 - 아티스트\n"
         "💬 한 줄 설명\n"
     )
     return prompt
@@ -142,9 +142,9 @@ if user_input:
         lines = raw.split("\n")
         i = 0
         while i < len(lines):
-            m = re.match(r"\d️⃣\s(.+?)\s-\s(.+)", lines[i])
-            if m and i + 1 < len(lines) and lines[i + 1].startswith("💬"):
-                title, artist = m.groups()
+            match = re.match(r"^\d+\.\s(.+?)\s-\s(.+)", lines[i])
+            if match and i + 1 < len(lines) and lines[i + 1].startswith("💬"):
+                title, artist = match.groups()
                 desc = lines[i + 1].replace("💬", "").strip()
                 songs.append((title.strip(), artist.strip(), desc))
                 i += 2
@@ -179,20 +179,12 @@ if "current_playlist" in st.session_state:
         c1, c2, c3, c4 = st.columns([0.8, 0.8, 1.4, 4])
 
         with c1:
-            if st.button(
-                "👍",
-                key=f"like_{song_id}",
-                disabled=rating is not None
-            ):
+            if st.button("👍", key=f"like_{song_id}", disabled=rating is not None):
                 st.session_state.taste_good.append(artist)
                 st.session_state.song_ratings[song_id] = "like"
 
         with c2:
-            if st.button(
-                "👎",
-                key=f"dislike_{song_id}",
-                disabled=rating is not None
-            ):
+            if st.button("👎", key=f"dislike_{song_id}", disabled=rating is not None):
                 st.session_state.taste_bad.append(artist)
                 st.session_state.song_ratings[song_id] = "dislike"
 
