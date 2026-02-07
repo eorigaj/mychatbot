@@ -36,6 +36,10 @@ if "playlist_counter" not in st.session_state:
 if "current_playlist" not in st.session_state:
     st.session_state.current_playlist = None
 
+# 🔑 새로 생성 보호용 플래그
+if "just_created" not in st.session_state:
+    st.session_state.just_created = False
+
 # ==================================================
 # 사이드바
 # ==================================================
@@ -53,9 +57,16 @@ with st.sidebar:
     st.subheader("📚 저장된 플레이리스트")
 
     names = list(st.session_state.playlists.keys())
+
     if names:
         selected = st.selectbox("플레이리스트 선택", names)
-        st.session_state.current_playlist = selected
+
+        # ⭐ 새로 생성된 직후에는 덮어쓰지 않음
+        if not st.session_state.just_created:
+            st.session_state.current_playlist = selected
+        else:
+            # 한 번만 보호 후 해제
+            st.session_state.just_created = False
     else:
         st.info("아직 생성된 플레이리스트가 없어요.")
 
@@ -143,6 +154,7 @@ if user_input:
         i += 1
 
     songs = []
+
     # 최대 3회 재시도
     for _ in range(3):
         resp = client.chat.completions.create(
@@ -152,9 +164,10 @@ if user_input:
                 {"role": "user", "content": user_input}
             ]
         )
-        raw = resp.choices[0].message.content
 
+        raw = resp.choices[0].message.content
         parsed = []
+
         lines = raw.split("\n")
         idx = 0
         while idx < len(lines):
@@ -173,6 +186,7 @@ if user_input:
 
     st.session_state.playlists[name] = songs
     st.session_state.current_playlist = name
+    st.session_state.just_created = True  # ⭐ 핵심
     st.rerun()
 
 # ==================================================
