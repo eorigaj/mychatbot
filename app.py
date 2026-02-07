@@ -29,10 +29,17 @@ GENRES = ["KPOP", "POP", "발라드", "재즈", "클래식", "R&B", "힙합", "E
 # 사이드바
 # ==================================================
 with st.sidebar:
+    st.header("⚙️ 설정")
+
     dj = st.selectbox("🎧 DJ 캐릭터", list(DJ_CHARACTERS.keys()))
     genre = st.selectbox("🎵 장르", GENRES)
     song_count = st.slider("🎶 추천 곡 수", 3, 30, 10)
-    city = st.text_input("🌦️ 도시", "Seoul")
+
+    use_weather = st.checkbox("🌦️ 날씨 반영", value=True)
+
+    city = None
+    if use_weather:
+        city = st.text_input("도시 입력", "Seoul")
 
     if st.button("🗑️ 전체 초기화"):
         st.session_state.clear()
@@ -41,10 +48,14 @@ with st.sidebar:
 # ==================================================
 # Secrets
 # ==================================================
+if "OPENAI_API_KEY" not in st.secrets:
+    st.error("OPENAI_API_KEY가 설정되지 않았습니다.")
+    st.stop()
+
 client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 
 # ==================================================
-# 날씨
+# 날씨 API (선택적)
 # ==================================================
 def get_weather(city):
     try:
@@ -60,9 +71,11 @@ def get_weather(city):
         ).json()
         return res["weather"][0]["description"]
     except:
-        return "알 수 없음"
+        return None
 
-weather = get_weather(city)
+weather = None
+if use_weather and city:
+    weather = get_weather(city)
 
 # ==================================================
 # session_state 초기화
@@ -85,21 +98,28 @@ def summarize(lst):
     return ", ".join([k for k, _ in c.most_common(5)]) or "없음"
 
 # ==================================================
-# 시스템 프롬프트
+# 시스템 프롬프트 생성
 # ==================================================
 def build_system_prompt():
-    return (
+    prompt = (
         f"{DJ_CHARACTERS[dj]}\n\n"
         f"- 장르: {genre} (무관이면 자유)\n"
-        f"- 날씨: {weather}\n"
         f"- 좋아요 취향: {summarize(st.session_state.taste_good)}\n"
-        f"- 싫어요 취향: {summarize(st.session_state.taste_bad)}\n\n"
-        f"❗ 반드시 정확히 {song_count}곡을 출력하세요.\n"
+        f"- 싫어요 취향: {summarize(st.session_state.taste_bad)}\n"
+    )
+
+    if use_weather and weather:
+        prompt += f"- 현재 날씨: {weather}\n"
+
+    prompt += (
+        f"\n❗ 반드시 정확히 {song_count}곡을 출력하세요.\n"
         f"❗ {song_count}곡이 아니면 잘못된 답변입니다.\n\n"
         "형식:\n"
         "1️⃣ 곡 제목 - 아티스트\n"
         "💬 한 줄 설명\n"
     )
+
+    return prompt
 
 # ==================================================
 # 사용자 입력
@@ -110,7 +130,7 @@ if user_input:
     st.session_state.playlist_counter += 1
     playlist_id = f"{date.today()}_{st.session_state.playlist_counter}"
 
-    # 재시도 최대 3회
+    # 최대 3회 재시도
     for _ in range(3):
         response = client.chat.completions.create(
             model="gpt-4o-mini",
@@ -130,7 +150,7 @@ if user_input:
             if m and i + 1 < len(lines) and lines[i + 1].startswith("💬"):
                 title, artist = m.groups()
                 desc = lines[i + 1].replace("💬", "").strip()
-                songs.append((title, artist, desc))
+                songs.append((title.strip(), artist.strip(), desc))
                 i += 2
             else:
                 i += 1
