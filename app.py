@@ -27,8 +27,7 @@ GENRES = ["KPOP", "POP", "발라드", "재즈", "클래식", "R&B", "힙합", "E
 # session_state 초기화
 # ==================================================
 if "playlists" not in st.session_state:
-    # {playlist_name: [(title, artist, desc), ...]}
-    st.session_state.playlists = {}
+    st.session_state.playlists = {}  # {name: [(title, artist, desc), ...]}
 
 if "playlist_counter" not in st.session_state:
     st.session_state.playlist_counter = 0
@@ -36,43 +35,9 @@ if "playlist_counter" not in st.session_state:
 if "current_playlist" not in st.session_state:
     st.session_state.current_playlist = None
 
-# 🔑 새로 생성 보호용 플래그
-if "just_created" not in st.session_state:
-    st.session_state.just_created = False
-
-# ==================================================
-# 사이드바
-# ==================================================
-with st.sidebar:
-    st.header("⚙️ 설정")
-
-    dj = st.selectbox("🎧 DJ 캐릭터", list(DJ_CHARACTERS.keys()))
-    genre = st.selectbox("🎵 장르", GENRES)
-    song_count = st.slider("🎶 추천 곡 수", 3, 30, 10)
-
-    use_weather = st.checkbox("🌦️ 날씨 반영", value=True)
-    city = st.text_input("도시", "Seoul") if use_weather else None
-
-    st.divider()
-    st.subheader("📚 저장된 플레이리스트")
-
-    names = list(st.session_state.playlists.keys())
-
-    if names:
-        selected = st.selectbox("플레이리스트 선택", names)
-
-        # ⭐ 새로 생성된 직후에는 덮어쓰지 않음
-        if not st.session_state.just_created:
-            st.session_state.current_playlist = selected
-        else:
-            # 한 번만 보호 후 해제
-            st.session_state.just_created = False
-    else:
-        st.info("아직 생성된 플레이리스트가 없어요.")
-
-    if st.button("🗑️ 전체 초기화"):
-        st.session_state.clear()
-        st.rerun()
+# ✅ selectbox 상태를 우리가 직접 컨트롤하기 위한 key
+if "playlist_selector" not in st.session_state:
+    st.session_state.playlist_selector = None
 
 # ==================================================
 # Secrets
@@ -86,7 +51,7 @@ client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 # ==================================================
 # 날씨 API (선택적)
 # ==================================================
-def get_weather(city_name):
+def get_weather(city_name: str):
     try:
         res = requests.get(
             "https://api.openweathermap.org/data/2.5/weather",
@@ -102,7 +67,46 @@ def get_weather(city_name):
     except Exception:
         return None
 
-weather = get_weather(city) if use_weather and city else None
+# ==================================================
+# 사이드바
+# ==================================================
+with st.sidebar:
+    st.header("⚙️ 설정")
+
+    dj = st.selectbox("🎧 DJ 캐릭터", list(DJ_CHARACTERS.keys()))
+    genre = st.selectbox("🎵 장르", GENRES)
+    song_count = st.slider("🎶 추천 곡 수", 3, 30, 10)
+
+    use_weather = st.checkbox("🌦️ 날씨 반영", value=True)
+    city = st.text_input("도시", "Seoul") if use_weather else None
+    weather = get_weather(city) if use_weather and city else None
+
+    st.divider()
+    st.subheader("📚 저장된 플레이리스트")
+
+    names = list(st.session_state.playlists.keys())
+
+    if names:
+        # ✅ current_playlist가 있으면 selectbox도 그걸 가리키게 동기화(핵심)
+        if st.session_state.current_playlist in names:
+            st.session_state.playlist_selector = st.session_state.current_playlist
+        else:
+            # current가 없거나 삭제됐으면 첫 번째로 맞춤
+            st.session_state.playlist_selector = names[0]
+            st.session_state.current_playlist = names[0]
+
+        # ✅ selectbox는 "playlist_selector"만 바꾸고,
+        #    아래에서 current_playlist를 그 값으로 동기화
+        st.selectbox("플레이리스트 선택", names, key="playlist_selector")
+        st.session_state.current_playlist = st.session_state.playlist_selector
+    else:
+        st.info("아직 생성된 플레이리스트가 없어요.")
+        st.session_state.current_playlist = None
+        st.session_state.playlist_selector = None
+
+    if st.button("🗑️ 전체 초기화"):
+        st.session_state.clear()
+        st.rerun()
 
 # ==================================================
 # 새 플레이리스트 이름 입력
@@ -120,7 +124,7 @@ def build_system_prompt():
         f"{DJ_CHARACTERS[dj]}\n\n"
         f"- 장르: {genre} (무관이면 자유)\n"
     )
-    if weather:
+    if use_weather and weather:
         prompt += f"- 현재 날씨: {weather}\n"
 
     prompt += (
@@ -148,10 +152,10 @@ if user_input:
 
     # 중복 방지
     base = name
-    i = 1
+    k = 1
     while name in st.session_state.playlists:
-        name = f"{base} ({i})"
-        i += 1
+        name = f"{base} ({k})"
+        k += 1
 
     songs = []
 
@@ -164,29 +168,29 @@ if user_input:
                 {"role": "user", "content": user_input}
             ]
         )
-
         raw = resp.choices[0].message.content
-        parsed = []
 
+        parsed = []
         lines = raw.split("\n")
-        idx = 0
-        while idx < len(lines):
-            m = re.match(r"^\d+\.\s(.+?)\s-\s(.+)", lines[idx])
-            if m and idx + 1 < len(lines) and lines[idx + 1].startswith("💬"):
+        i = 0
+        while i < len(lines):
+            m = re.match(r"^\d+\.\s(.+?)\s-\s(.+)", lines[i])
+            if m and i + 1 < len(lines) and lines[i + 1].startswith("💬"):
                 title, artist = m.groups()
-                desc = lines[idx + 1].replace("💬", "").strip()
+                desc = lines[i + 1].replace("💬", "").strip()
                 parsed.append((title.strip(), artist.strip(), desc))
-                idx += 2
+                i += 2
             else:
-                idx += 1
+                i += 1
 
         if len(parsed) == song_count:
             songs = parsed
             break
 
+    # 저장 + ✅ 현재 선택을 새 플레이리스트로 강제 동기화(핵심)
     st.session_state.playlists[name] = songs
     st.session_state.current_playlist = name
-    st.session_state.just_created = True  # ⭐ 핵심
+    st.session_state.playlist_selector = name  # ✅ 이 줄이 결정타
     st.rerun()
 
 # ==================================================
@@ -201,10 +205,10 @@ if current:
     if not songs:
         st.info("곡을 불러오지 못했어요. 다시 생성해보세요.")
     else:
-        for i, (title, artist, desc) in enumerate(songs, 1):
+        for idx, (title, artist, desc) in enumerate(songs, 1):
             query = urllib.parse.quote_plus(f"{title} {artist}")
             youtube_url = f"https://www.youtube.com/results?search_query={query}"
 
-            st.markdown(f"### {i}. {title} - {artist}")
+            st.markdown(f"### {idx}. {title} - {artist}")
             st.caption(f"💬 {desc}")
             st.link_button("▶ YouTube에서 듣기", youtube_url)
