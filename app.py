@@ -38,15 +38,14 @@ with st.sidebar:
     city = st.text_input("도시", "Seoul") if use_weather else None
 
     st.divider()
-    st.subheader("📚 이전 플레이리스트")
+    st.subheader("📚 플레이리스트 관리")
 
-    if "playlists" in st.session_state and st.session_state.playlists:
-        selected_playlist_name = st.selectbox(
-            "플레이리스트 선택",
-            list(st.session_state.playlists.keys())
-        )
-    else:
-        selected_playlist_name = None
+    playlists = st.session_state.get("playlists", {})
+
+    selected_playlist = (
+        st.selectbox("플레이리스트 선택", list(playlists.keys()))
+        if playlists else None
+    )
 
     if st.button("🗑️ 전체 초기화"):
         st.session_state.clear()
@@ -86,8 +85,7 @@ weather = get_weather(city) if use_weather and city else None
 # session_state 초기화
 # ==================================================
 if "playlists" not in st.session_state:
-    # {playlist_name: [(title, artist, desc), ...]}
-    st.session_state.playlists = {}
+    st.session_state.playlists = {}  # {name: [(title, artist, desc)]}
 
 if "playlist_counter" not in st.session_state:
     st.session_state.playlist_counter = 0
@@ -99,12 +97,12 @@ if "current_playlist" not in st.session_state:
 # 플레이리스트 이름 입력
 # ==================================================
 playlist_name_input = st.text_input(
-    "✏️ 플레이리스트 이름",
+    "✏️ 새 플레이리스트 이름",
     placeholder="예: 비 오는 밤 감성 플레이리스트"
 )
 
 # ==================================================
-# 시스템 프롬프트 생성
+# 시스템 프롬프트
 # ==================================================
 def build_system_prompt():
     prompt = (
@@ -125,22 +123,25 @@ def build_system_prompt():
     return prompt
 
 # ==================================================
-# 사용자 입력
+# 사용자 입력 → 플레이리스트 생성
 # ==================================================
 user_input = st.chat_input("지금 기분이나 상황을 말해줘 🎶")
 
 if user_input:
     st.session_state.playlist_counter += 1
 
-    # 플레이리스트 이름 결정
+    # 이름 결정
     if playlist_name_input.strip():
-        playlist_name = playlist_name_input.strip()
+        name = playlist_name_input.strip()
     else:
-        playlist_name = f"{date.today()} 플레이리스트 {st.session_state.playlist_counter}"
+        name = f"{date.today()} 플레이리스트 {st.session_state.playlist_counter}"
 
-    # 중복 이름 방지
-    if playlist_name in st.session_state.playlists:
-        playlist_name = f"{playlist_name} ({st.session_state.playlist_counter})"
+    # 중복 방지
+    original_name = name
+    i = 1
+    while name in st.session_state.playlists:
+        name = f"{original_name} ({i})"
+        i += 1
 
     # 최대 3회 재시도
     for _ in range(3):
@@ -158,9 +159,9 @@ if user_input:
         lines = raw.split("\n")
         i = 0
         while i < len(lines):
-            match = re.match(r"^\d+\.\s(.+?)\s-\s(.+)", lines[i])
-            if match and i + 1 < len(lines) and lines[i + 1].startswith("💬"):
-                title, artist = match.groups()
+            m = re.match(r"^\d+\.\s(.+?)\s-\s(.+)", lines[i])
+            if m and i + 1 < len(lines) and lines[i + 1].startswith("💬"):
+                title, artist = m.groups()
                 desc = lines[i + 1].replace("💬", "").strip()
                 songs.append((title.strip(), artist.strip(), desc))
                 i += 2
@@ -170,13 +171,49 @@ if user_input:
         if len(songs) == song_count:
             break
 
-    st.session_state.playlists[playlist_name] = songs
-    st.session_state.current_playlist = playlist_name
+    st.session_state.playlists[name] = songs
+    st.session_state.current_playlist = name
+
+# ==================================================
+# 플레이리스트 이름 수정 / 삭제
+# ==================================================
+if selected_playlist:
+    st.divider()
+    st.subheader("🛠️ 플레이리스트 편집")
+
+    new_name = st.text_input(
+        "이름 수정",
+        value=selected_playlist,
+        key="rename_input"
+    )
+
+    col1, col2 = st.columns(2)
+
+    # 이름 수정
+    with col1:
+        if st.button("✏️ 이름 변경"):
+            if new_name and new_name != selected_playlist:
+                base = new_name
+                i = 1
+                while new_name in st.session_state.playlists:
+                    new_name = f"{base} ({i})"
+                    i += 1
+
+                st.session_state.playlists[new_name] = st.session_state.playlists.pop(selected_playlist)
+                st.session_state.current_playlist = new_name
+                st.experimental_rerun()
+
+    # 삭제
+    with col2:
+        if st.button("🗑️ 삭제"):
+            del st.session_state.playlists[selected_playlist]
+            st.session_state.current_playlist = None
+            st.experimental_rerun()
 
 # ==================================================
 # 표시할 플레이리스트 결정
 # ==================================================
-playlist_to_show = st.session_state.current_playlist or selected_playlist_name
+playlist_to_show = st.session_state.current_playlist or selected_playlist
 
 # ==================================================
 # 플레이리스트 출력
