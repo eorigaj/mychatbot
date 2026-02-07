@@ -10,7 +10,7 @@ import urllib.parse
 # ==================================================
 st.set_page_config(page_title="🎧 음악 추천 DJ", page_icon="🎧")
 st.title("🎧 음악 추천 DJ")
-st.write("DJ 캐릭터와 함께 음악 플레이리스트를 추천해드려요 🎶")
+st.write("DJ 캐릭터와 함께 나만의 플레이리스트를 만들어보세요 🎶")
 
 # ==================================================
 # DJ 캐릭터
@@ -41,12 +41,12 @@ with st.sidebar:
     st.subheader("📚 이전 플레이리스트")
 
     if "playlists" in st.session_state and st.session_state.playlists:
-        selected_pid = st.selectbox(
-            "다시 보기",
+        selected_playlist_name = st.selectbox(
+            "플레이리스트 선택",
             list(st.session_state.playlists.keys())
         )
     else:
-        selected_pid = None
+        selected_playlist_name = None
 
     if st.button("🗑️ 전체 초기화"):
         st.session_state.clear()
@@ -86,13 +86,22 @@ weather = get_weather(city) if use_weather and city else None
 # session_state 초기화
 # ==================================================
 if "playlists" not in st.session_state:
-    st.session_state.playlists = {}  # {playlist_id: [(title, artist, desc), ...]}
+    # {playlist_name: [(title, artist, desc), ...]}
+    st.session_state.playlists = {}
 
 if "playlist_counter" not in st.session_state:
     st.session_state.playlist_counter = 0
 
 if "current_playlist" not in st.session_state:
     st.session_state.current_playlist = None
+
+# ==================================================
+# 플레이리스트 이름 입력
+# ==================================================
+playlist_name_input = st.text_input(
+    "✏️ 플레이리스트 이름",
+    placeholder="예: 비 오는 밤 감성 플레이리스트"
+)
 
 # ==================================================
 # 시스템 프롬프트 생성
@@ -122,7 +131,16 @@ user_input = st.chat_input("지금 기분이나 상황을 말해줘 🎶")
 
 if user_input:
     st.session_state.playlist_counter += 1
-    playlist_id = f"{date.today()}_{st.session_state.playlist_counter}"
+
+    # 플레이리스트 이름 결정
+    if playlist_name_input.strip():
+        playlist_name = playlist_name_input.strip()
+    else:
+        playlist_name = f"{date.today()} 플레이리스트 {st.session_state.playlist_counter}"
+
+    # 중복 이름 방지
+    if playlist_name in st.session_state.playlists:
+        playlist_name = f"{playlist_name} ({st.session_state.playlist_counter})"
 
     # 최대 3회 재시도
     for _ in range(3):
@@ -152,13 +170,13 @@ if user_input:
         if len(songs) == song_count:
             break
 
-    st.session_state.playlists[playlist_id] = songs
-    st.session_state.current_playlist = playlist_id
+    st.session_state.playlists[playlist_name] = songs
+    st.session_state.current_playlist = playlist_name
 
 # ==================================================
 # 표시할 플레이리스트 결정
 # ==================================================
-playlist_to_show = st.session_state.current_playlist or selected_pid
+playlist_to_show = st.session_state.current_playlist or selected_playlist_name
 
 # ==================================================
 # 플레이리스트 출력
@@ -166,7 +184,7 @@ playlist_to_show = st.session_state.current_playlist or selected_pid
 if playlist_to_show:
     songs = st.session_state.playlists.get(playlist_to_show, [])
 
-    st.subheader(f"🎧 플레이리스트 ({playlist_to_show})")
+    st.subheader(f"🎧 {playlist_to_show}")
 
     for idx, (title, artist, desc) in enumerate(songs, 1):
         query = urllib.parse.quote_plus(f"{title} {artist}")
